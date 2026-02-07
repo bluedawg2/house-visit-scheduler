@@ -20,7 +20,7 @@ def main():
     print(f"{'='*60}\n")
 
     params = st.query_params
-    role = params.get("role", "visitor")
+    role = params.get("role", "")
     key = params.get("key", "")
 
     if role == "admin":
@@ -30,9 +30,24 @@ def main():
         else:
             st.error("Invalid admin key. Access denied.")
             st.stop()
-    else:
+    elif role == "visitor":
         import visitor_view
         visitor_view.render()
+    else:
+        # Landing page — no role specified
+        st.title("House Visit Scheduler")
+        st.markdown("Welcome! Choose your role to get started.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Admin")
+            st.caption("Manage availability and review visit requests.")
+            admin_url = f"?role=admin&key={admin_key}"
+            st.markdown(f"[Open Admin Dashboard]({admin_url})")
+        with col2:
+            st.subheader("Visitor")
+            st.caption("View available dates and request a visit.")
+            st.markdown("[Open Visitor Page](?role=visitor)")
 
 
 if __name__ == "__main__":
