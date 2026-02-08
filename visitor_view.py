@@ -5,7 +5,7 @@ import database
 
 
 def _build_calendar_events():
-    """Build event list for the visitor's read-only calendar."""
+    """Build event list for the visitor calendar."""
     events = []
     availability = database.get_all_availability()
     accepted = database.get_accepted_requests()
@@ -38,19 +38,31 @@ def _build_calendar_events():
 
 
 def render():
+    st.session_state.setdefault("visitor_screen", "booking")
+    st.session_state.setdefault("visitor_check_in", None)
+    st.session_state.setdefault("visitor_check_out", None)
+    st.session_state.setdefault("visitor_submission", None)
+
+    if st.session_state["visitor_screen"] == "confirmation":
+        _render_confirmation_screen()
+    else:
+        _render_booking_screen()
+
+
+def _render_booking_screen():
     st.title("House Visit Scheduler")
     st.subheader("Book Your Visit")
 
     st.markdown(
         "Green dates are **available**. Gray dates are already **booked**. "
-        "Choose your dates below and submit a request."
+        "Click a date to set check-in, then click another to set check-out."
     )
 
-    # --- Calendar ---
+    # --- Selectable Calendar ---
     events = _build_calendar_events()
     calendar_options = {
         "editable": False,
-        "selectable": False,
+        "selectable": True,
         "initialView": "dayGridMonth",
         "headerToolbar": {
             "left": "prev,next",
@@ -59,46 +71,125 @@ def render():
         },
         "height": 450,
     }
-    st_calendar(events=events, options=calendar_options, key="visitor_cal")
+    cal_result = st_calendar(events=events, options=calendar_options, key="visitor_cal")
+
+    # DEBUG: always show what the calendar returns
+    st.caption(f"DEBUG cal_result: {cal_result}")
+
+    # Handle single-click (dateClick) — first click = check-in, second = check-out
+    if cal_result and cal_result.get("callback") == "dateClick":
+        clicked = cal_result["dateClick"]["date"][:10]
+        if st.session_state["visitor_check_in"] is None:
+            st.session_state["visitor_check_in"] = clicked
+            st.session_state["visitor_check_out"] = None
+        elif st.session_state["visitor_check_out"] is None:
+            first = st.session_state["visitor_check_in"]
+            if clicked < first:
+                st.session_state["visitor_check_in"] = clicked
+                st.session_state["visitor_check_out"] = first
+            elif clicked == first:
+                st.session_state["visitor_check_out"] = clicked
+            else:
+                st.session_state["visitor_check_out"] = clicked
+        else:
+            # Both already set — start over with new check-in
+            st.session_state["visitor_check_in"] = clicked
+            st.session_state["visitor_check_out"] = None
+
+    # Handle click-and-drag (select) — sets both dates at once
+    if cal_result and cal_result.get("callback") == "select":
+        sel = cal_result["select"]
+        start_str = sel["start"][:10]
+        end_inclusive_str = (
+            date.fromisoformat(sel["end"][:10]) - timedelta(days=1)
+        ).isoformat()
+        st.session_state["visitor_check_in"] = start_str
+        st.session_state["visitor_check_out"] = end_inclusive_str
 
     st.divider()
 
-    # --- Request Form ---
-    with st.form("visit_request_form", clear_on_submit=True):
-        st.subheader("Request a Visit")
+    # --- Stay Summary ---
+    check_in = st.session_state["visitor_check_in"]
+    check_out = st.session_state["visitor_check_out"]
 
+    if check_in and check_out:
+        ci_date = date.fromisoformat(check_in)
+        co_date = date.fromisoformat(check_out)
+        nights = max((co_date - ci_date).days, 1)
+        col_summary, col_clear = st.columns([5, 1])
+        with col_summary:
+            st.markdown(
+                f"**Check-in:** {check_in} &nbsp;|&nbsp; "
+                f"**Check-out:** {check_out} &nbsp;|&nbsp; "
+                f"**{nights} night{'s' if nights != 1 else ''}**"
+            )
+        with col_clear:
+            if st.button("Clear", key="clear_dates"):
+                st.session_state["visitor_check_in"] = None
+                st.session_state["visitor_check_out"] = None
+                st.rerun()
+    elif check_in:
+        st.markdown(f"**Check-in:** {check_in} — now click your check-out date.")
+    else:
+        st.info("Click a date on the calendar above to set your check-in.")
+
+    # --- Booking Form ---
+    with st.form("visit_request_form", clear_on_submit=False):
+        st.subheader("Your Details")
         name = st.text_input("Your Name *")
         email = st.text_input("Your Email *")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            check_in = st.date_input(
-                "Check-in Date *",
-                value=date.today() + timedelta(days=1),
-                min_value=date.today(),
-                max_value=date.today() + timedelta(days=365),
-            )
-        with col2:
-            check_out = st.date_input(
-                "Check-out Date *",
-                value=date.today() + timedelta(days=2),
-                min_value=date.today(),
-                max_value=date.today() + timedelta(days=365),
-            )
-
         notes = st.text_area(
-            "Notes (optional)",
+            "Anything we should know?",
             placeholder="Number of guests, special requests, etc.",
         )
-
-        submitted = st.form_submit_button("Submit Request", type="primary", use_container_width=True)
+        submitted = st.form_submit_button(
+            "Submit Request",
+            type="primary",
+            use_container_width=True,
+            disabled=(check_in is None),
+        )
 
     if submitted:
         _handle_submission(name, email, check_in, check_out, notes)
 
     st.divider()
+    _render_status_lookup()
 
-    # --- Status Lookup ---
+
+def _render_confirmation_screen():
+    st.title("House Visit Scheduler")
+
+    submission = st.session_state.get("visitor_submission")
+    if not submission:
+        st.session_state["visitor_screen"] = "booking"
+        st.rerun()
+        return
+
+    st.success("Request sent!")
+    st.markdown(
+        "Your visit request has been submitted. "
+        "The host will review it and you can check the status below."
+    )
+
+    st.markdown("---")
+    st.markdown(f"**Guest:** {submission['name']}")
+    st.markdown(f"**Check-in:** {submission['check_in']}")
+    st.markdown(f"**Check-out:** {submission['check_out']}")
+    st.markdown(f"**Nights:** {submission['nights']}")
+    if submission["notes"]:
+        st.markdown(f"**Message:** {submission['notes']}")
+    st.markdown("---")
+
+    if st.button("Book another stay", type="primary"):
+        st.session_state["visitor_screen"] = "booking"
+        st.session_state["visitor_submission"] = None
+        st.rerun()
+
+    st.divider()
+    _render_status_lookup()
+
+
+def _render_status_lookup():
     with st.expander("Check Your Request Status"):
         lookup_email = st.text_input("Enter your email", key="lookup_email")
         if st.button("Look Up", key="lookup_btn"):
@@ -123,21 +214,20 @@ def render():
                             st.caption(f"Admin note: {req['admin_notes']}")
 
 
-def _handle_submission(name, email, check_in, check_out, notes):
-    """Validate and create a visit request."""
-    # Validation
-    if not name.strip():
+def _handle_submission(name, email, check_in_str, check_out_str, notes):
+    """Validate and create a visit request, then transition to confirmation."""
+    if not name or not name.strip():
         st.error("Please enter your name.")
         return
-    if not email.strip() or "@" not in email or "." not in email:
+    if not email or not email.strip() or "@" not in email or "." not in email:
         st.error("Please enter a valid email address.")
         return
-    if check_out < check_in:
+    if not check_in_str or not check_out_str:
+        st.error("Please select dates on the calendar.")
+        return
+    if check_out_str < check_in_str:
         st.error("Check-out date must be on or after check-in date.")
         return
-
-    check_in_str = check_in.isoformat()
-    check_out_str = check_out.isoformat()
 
     if not database.is_range_within_availability(check_in_str, check_out_str):
         st.error(
@@ -156,7 +246,20 @@ def _handle_submission(name, email, check_in, check_out, notes):
     database.create_visit_request(
         name.strip(), email.strip(), check_in_str, check_out_str, notes.strip()
     )
-    st.success(
-        "Your request has been submitted! "
-        "You can check the status below using your email."
-    )
+
+    ci = date.fromisoformat(check_in_str)
+    co = date.fromisoformat(check_out_str)
+    nights = max((co - ci).days, 1)
+
+    st.session_state["visitor_submission"] = {
+        "name": name.strip(),
+        "email": email.strip(),
+        "check_in": check_in_str,
+        "check_out": check_out_str,
+        "nights": nights,
+        "notes": notes.strip(),
+    }
+    st.session_state["visitor_screen"] = "confirmation"
+    st.session_state["visitor_check_in"] = None
+    st.session_state["visitor_check_out"] = None
+    st.rerun()
