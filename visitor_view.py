@@ -54,12 +54,30 @@ def _render_booking_screen():
     st.subheader("Book Your Visit")
 
     st.markdown(
-        "Green dates are **available**. Gray dates are already **booked**. "
+        "Green = **available**. Gray = **booked**. Blue = **your selection**. "
         "Click a date to set check-in, then click another to set check-out."
     )
 
     # --- Selectable Calendar ---
     events = _build_calendar_events()
+
+    # Add selected date range as a highlighted event
+    check_in = st.session_state["visitor_check_in"]
+    check_out = st.session_state["visitor_check_out"]
+    if check_in:
+        sel_end = check_out if check_out else check_in
+        sel_end_exclusive = (
+            date.fromisoformat(sel_end) + timedelta(days=1)
+        ).isoformat()
+        events.append({
+            "title": "Your stay",
+            "start": check_in,
+            "end": sel_end_exclusive,
+            "backgroundColor": "#1E88E5",
+            "borderColor": "#1565C0",
+            "textColor": "#FFFFFF",
+        })
+
     calendar_options = {
         "editable": False,
         "selectable": True,
@@ -72,9 +90,6 @@ def _render_booking_screen():
         "height": 450,
     }
     cal_result = st_calendar(events=events, options=calendar_options, key="visitor_cal")
-
-    # DEBUG: always show what the calendar returns
-    st.caption(f"DEBUG cal_result: {cal_result}")
 
     # Handle single-click (dateClick) — first click = check-in, second = check-out
     if cal_result and cal_result.get("callback") == "dateClick":
