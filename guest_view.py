@@ -2,10 +2,44 @@ import streamlit as st
 from datetime import date, timedelta
 from streamlit_calendar import calendar as st_calendar
 import database
+import base64
+import os
+
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _inject_background_css():
+    """Inject a background image (or fallback gradient) into the guest page."""
+    bg_css = None
+    for ext in ("jpg", "jpeg", "png", "webp"):
+        path = os.path.join(_APP_DIR, "assets", f"background.{ext}")
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode()
+            mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+            bg_css = f"url(data:{mime};base64,{encoded})"
+            break
+
+    if not bg_css:
+        bg_css = "linear-gradient(135deg, #e0e7ff 0%, #f0f4ff 50%, #e8f0fe 100%)"
+
+    st.markdown(f"""
+    <style>
+    .stApp {{
+        background: {bg_css};
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }}
+    .stApp > div:first-child {{
+        background: rgba(255, 255, 255, 0.85);
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 
 
 def _build_calendar_events():
-    """Build event list for the visitor calendar."""
+    """Build event list for the guest calendar."""
     events = []
     availability = database.get_all_availability()
     accepted = database.get_accepted_requests()
@@ -38,12 +72,13 @@ def _build_calendar_events():
 
 
 def render():
-    st.session_state.setdefault("visitor_screen", "booking")
-    st.session_state.setdefault("visitor_check_in", None)
-    st.session_state.setdefault("visitor_check_out", None)
-    st.session_state.setdefault("visitor_submission", None)
+    _inject_background_css()
+    st.session_state.setdefault("guest_screen", "booking")
+    st.session_state.setdefault("guest_check_in", None)
+    st.session_state.setdefault("guest_check_out", None)
+    st.session_state.setdefault("guest_submission", None)
 
-    if st.session_state["visitor_screen"] == "confirmation":
+    if st.session_state["guest_screen"] == "confirmation":
         _render_confirmation_screen()
     else:
         _render_booking_screen()
@@ -62,8 +97,8 @@ def _render_booking_screen():
     events = _build_calendar_events()
 
     # Add selected date range as a highlighted event
-    check_in = st.session_state["visitor_check_in"]
-    check_out = st.session_state["visitor_check_out"]
+    check_in = st.session_state["guest_check_in"]
+    check_out = st.session_state["guest_check_out"]
     if check_in:
         sel_end = check_out if check_out else check_in
         sel_end_exclusive = (
@@ -89,27 +124,27 @@ def _render_booking_screen():
         },
         "height": 450,
     }
-    cal_result = st_calendar(events=events, options=calendar_options, key="visitor_cal")
+    cal_result = st_calendar(events=events, options=calendar_options, key="guest_cal")
 
     # Handle single-click (dateClick) — first click = check-in, second = check-out
     if cal_result and cal_result.get("callback") == "dateClick":
         clicked = cal_result["dateClick"]["date"][:10]
-        if st.session_state["visitor_check_in"] is None:
-            st.session_state["visitor_check_in"] = clicked
-            st.session_state["visitor_check_out"] = None
-        elif st.session_state["visitor_check_out"] is None:
-            first = st.session_state["visitor_check_in"]
+        if st.session_state["guest_check_in"] is None:
+            st.session_state["guest_check_in"] = clicked
+            st.session_state["guest_check_out"] = None
+        elif st.session_state["guest_check_out"] is None:
+            first = st.session_state["guest_check_in"]
             if clicked < first:
-                st.session_state["visitor_check_in"] = clicked
-                st.session_state["visitor_check_out"] = first
+                st.session_state["guest_check_in"] = clicked
+                st.session_state["guest_check_out"] = first
             elif clicked == first:
-                st.session_state["visitor_check_out"] = clicked
+                st.session_state["guest_check_out"] = clicked
             else:
-                st.session_state["visitor_check_out"] = clicked
+                st.session_state["guest_check_out"] = clicked
         else:
             # Both already set — start over with new check-in
-            st.session_state["visitor_check_in"] = clicked
-            st.session_state["visitor_check_out"] = None
+            st.session_state["guest_check_in"] = clicked
+            st.session_state["guest_check_out"] = None
 
     # Handle click-and-drag (select) — sets both dates at once
     if cal_result and cal_result.get("callback") == "select":
@@ -118,14 +153,14 @@ def _render_booking_screen():
         end_inclusive_str = (
             date.fromisoformat(sel["end"][:10]) - timedelta(days=1)
         ).isoformat()
-        st.session_state["visitor_check_in"] = start_str
-        st.session_state["visitor_check_out"] = end_inclusive_str
+        st.session_state["guest_check_in"] = start_str
+        st.session_state["guest_check_out"] = end_inclusive_str
 
     st.divider()
 
     # --- Stay Summary ---
-    check_in = st.session_state["visitor_check_in"]
-    check_out = st.session_state["visitor_check_out"]
+    check_in = st.session_state["guest_check_in"]
+    check_out = st.session_state["guest_check_out"]
 
     if check_in and check_out:
         ci_date = date.fromisoformat(check_in)
@@ -140,8 +175,8 @@ def _render_booking_screen():
             )
         with col_clear:
             if st.button("Clear", key="clear_dates"):
-                st.session_state["visitor_check_in"] = None
-                st.session_state["visitor_check_out"] = None
+                st.session_state["guest_check_in"] = None
+                st.session_state["guest_check_out"] = None
                 st.rerun()
     elif check_in:
         st.markdown(f"**Check-in:** {check_in} — now click your check-out date.")
@@ -174,9 +209,9 @@ def _render_booking_screen():
 def _render_confirmation_screen():
     st.title("House Visit Scheduler")
 
-    submission = st.session_state.get("visitor_submission")
+    submission = st.session_state.get("guest_submission")
     if not submission:
-        st.session_state["visitor_screen"] = "booking"
+        st.session_state["guest_screen"] = "booking"
         st.rerun()
         return
 
@@ -196,8 +231,8 @@ def _render_confirmation_screen():
     st.markdown("---")
 
     if st.button("Book another stay", type="primary"):
-        st.session_state["visitor_screen"] = "booking"
-        st.session_state["visitor_submission"] = None
+        st.session_state["guest_screen"] = "booking"
+        st.session_state["guest_submission"] = None
         st.rerun()
 
     st.divider()
@@ -266,7 +301,7 @@ def _handle_submission(name, email, check_in_str, check_out_str, notes):
     co = date.fromisoformat(check_out_str)
     nights = max((co - ci).days, 1)
 
-    st.session_state["visitor_submission"] = {
+    st.session_state["guest_submission"] = {
         "name": name.strip(),
         "email": email.strip(),
         "check_in": check_in_str,
@@ -274,7 +309,7 @@ def _handle_submission(name, email, check_in_str, check_out_str, notes):
         "nights": nights,
         "notes": notes.strip(),
     }
-    st.session_state["visitor_screen"] = "confirmation"
-    st.session_state["visitor_check_in"] = None
-    st.session_state["visitor_check_out"] = None
+    st.session_state["guest_screen"] = "confirmation"
+    st.session_state["guest_check_in"] = None
+    st.session_state["guest_check_out"] = None
     st.rerun()

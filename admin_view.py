@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import date, timedelta
 from streamlit_calendar import calendar as st_calendar
 import database
+import email_service
 
 
 def _build_calendar_events():
@@ -44,16 +45,24 @@ def render():
     st.title("House Visit Scheduler")
     st.subheader("Admin Dashboard")
 
-    # --- Visitor Link ---
+    # --- Email feedback banner ---
+    if "email_feedback" in st.session_state:
+        kind, msg = st.session_state.pop("email_feedback")
+        if kind == "success":
+            st.success(msg)
+        else:
+            st.warning(msg)
+
+    # --- Guest Link ---
     base_url = st.query_params.get("_base_url", "http://localhost:8501")
-    visitor_url = f"{base_url}/?role=visitor"
+    guest_url = f"{base_url}/?role=guest"
     st.text_input(
-        "Share this link with visitors:",
-        value=visitor_url,
+        "Share this link with guests:",
+        value=guest_url,
         disabled=True,
-        key="visitor_link",
+        key="guest_link",
     )
-    st.info("Copy the link above and send it to your visitors.")
+    st.info("Copy the link above and send it to your guests.")
 
     st.divider()
 
@@ -204,11 +213,71 @@ def render():
 
 
 
+    # --- Email Settings ---
+    _render_smtp_settings()
+
+
+def _render_smtp_settings():
+    """Render the SMTP configuration expander."""
+    with st.expander("Email Settings (SMTP)"):
+        st.caption("Configure SMTP to auto-send confirmation emails with calendar invites when you accept a request.")
+        existing = database.get_smtp_config() or {}
+        server = st.text_input("SMTP Server", value=existing.get("server", ""), key="smtp_server")
+        port = st.text_input("Port", value=existing.get("port", "587"), key="smtp_port")
+        username = st.text_input("Username", value=existing.get("username", ""), key="smtp_username")
+        password = st.text_input("Password", value=existing.get("password", ""), type="password", key="smtp_password")
+        from_addr = st.text_input("From Address", value=existing.get("from_address", ""), key="smtp_from")
+
+        btn_col1, btn_col2, _ = st.columns([1, 1, 3])
+        with btn_col1:
+            if st.button("Save", key="smtp_save"):
+                database.save_smtp_config(server, port, username, password, from_addr)
+                st.success("SMTP settings saved.")
+        with btn_col2:
+            if st.button("Test Connection", key="smtp_test"):
+                cfg = database.get_smtp_config()
+                if not cfg:
+                    st.error("Please save SMTP settings first.")
+                else:
+                    try:
+                        email_service.test_smtp_connection(cfg)
+                        st.success("Connection successful!")
+                    except Exception as e:
+                        st.error(f"Connection failed: {e}")
+
+
 def _accept_request(req: dict, admin_notes: str):
-    """Accept a visit request."""
+    """Accept a visit request and attempt to send confirmation email."""
     if database.has_overlap_conflict(req["check_in_date"], req["check_out_date"]):
         st.error("Cannot accept: these dates overlap with another accepted booking.")
         return
 
     database.update_request_status(req["id"], "accepted", admin_notes=admin_notes)
+
+    # Attempt to send confirmation email
+    smtp_cfg = database.get_smtp_config()
+    if smtp_cfg:
+        try:
+            email_service.send_confirmation_email(
+                smtp_cfg,
+                req["visitor_name"],
+                req["visitor_email"],
+                req["check_in_date"],
+                req["check_out_date"],
+            )
+            st.session_state["email_feedback"] = (
+                "success",
+                f"Request accepted and confirmation email sent to {req['visitor_email']}.",
+            )
+        except Exception as e:
+            st.session_state["email_feedback"] = (
+                "warning",
+                f"Request accepted but email failed: {e}",
+            )
+    else:
+        st.session_state["email_feedback"] = (
+            "success",
+            "Request accepted. (No SMTP configured — no email sent.)",
+        )
+
     st.rerun()

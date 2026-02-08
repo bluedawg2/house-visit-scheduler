@@ -189,3 +189,34 @@ def has_overlap_conflict(check_in: str, check_out: str) -> bool:
     ).fetchone()
     conn.close()
     return row["cnt"] > 0
+
+
+# --- SMTP Config ---
+
+_SMTP_KEYS = ("smtp_server", "smtp_port", "smtp_username", "smtp_password", "smtp_from_address")
+
+
+def get_smtp_config() -> dict | None:
+    """Return SMTP config dict or None if not configured."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT key, value FROM config WHERE key IN (?, ?, ?, ?, ?)", _SMTP_KEYS
+    ).fetchall()
+    conn.close()
+    if len(rows) < len(_SMTP_KEYS):
+        return None
+    cfg = {r["key"].removeprefix("smtp_"): r["value"] for r in rows}
+    if not all(cfg.values()):
+        return None
+    return cfg
+
+
+def save_smtp_config(server: str, port: str, username: str, password: str, from_address: str) -> None:
+    conn = _get_conn()
+    for key, value in zip(_SMTP_KEYS, (server, port, username, password, from_address)):
+        conn.execute(
+            "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+            (key, value, value),
+        )
+    conn.commit()
+    conn.close()

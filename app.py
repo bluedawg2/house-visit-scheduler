@@ -16,7 +16,7 @@ def main():
     # Print admin URL to server console on startup
     print(f"\n{'='*60}")
     print(f"  Admin URL: http://localhost:8501/?role=admin&key={admin_key}")
-    print(f"  Visitor URL: http://localhost:8501/?role=visitor")
+    print(f"  Guest URL: http://localhost:8501/?role=guest")
     print(f"{'='*60}\n")
 
     params = st.query_params
@@ -30,9 +30,9 @@ def main():
         else:
             st.error("Invalid admin key. Access denied.")
             st.stop()
-    elif role == "visitor":
-        import visitor_view
-        visitor_view.render()
+    elif role == "guest":
+        import guest_view
+        guest_view.render()
     else:
         # Landing page — no role specified
         st.title("House Visit Scheduler")
@@ -45,9 +45,9 @@ def main():
             admin_url = f"?role=admin&key={admin_key}"
             st.markdown(f"[Open Admin Dashboard]({admin_url})")
         with col2:
-            st.subheader("Visitor")
+            st.subheader("Guest")
             st.caption("View available dates and request a visit.")
-            st.markdown("[Open Visitor Page](?role=visitor)")
+            st.markdown("[Open Guest Page](?role=guest)")
 
 
 if __name__ == "__main__":
