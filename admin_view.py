@@ -153,8 +153,29 @@ def _render_requests_tab(pending):
 
 
 def _render_availability_tab():
-    """Render availability management with date pickers as primary input."""
-    col_add, col_cal = st.columns([2, 3])
+    """Render availability management with calendar overview on top."""
+
+    # Calendar overview -- full width at the top
+    st.markdown("#### Calendar Overview")
+    events = _build_calendar_events()
+    calendar_options = {
+        "editable": False,
+        "selectable": False,
+        "initialView": "dayGridMonth",
+        "headerToolbar": {
+            "left": "prev,next today",
+            "center": "title",
+            "right": "",
+        },
+        "height": 500,
+    }
+    st_calendar(events=events, options=calendar_options, key="admin_cal")
+    st.caption("Green = available | Orange = pending | Blue = accepted")
+
+    st.divider()
+
+    # Add availability + current list side by side below
+    col_add, col_list = st.columns(2)
 
     with col_add:
         st.markdown("#### Add Available Dates")
@@ -168,7 +189,7 @@ def _render_availability_tab():
                 database.add_availability(start.isoformat(), end.isoformat())
                 st.rerun()
 
-        st.divider()
+    with col_list:
         st.markdown("#### Current Availability")
         availability = database.get_all_availability()
         if not availability:
@@ -181,23 +202,6 @@ def _render_availability_tab():
                 if st.button("Remove", key=f"rm_{avail['id']}"):
                     database.remove_availability(avail["id"])
                     st.rerun()
-
-    with col_cal:
-        st.markdown("#### Calendar Overview")
-        events = _build_calendar_events()
-        calendar_options = {
-            "editable": False,
-            "selectable": False,
-            "initialView": "dayGridMonth",
-            "headerToolbar": {
-                "left": "prev,next today",
-                "center": "title",
-                "right": "",
-            },
-            "height": 500,
-        }
-        st_calendar(events=events, options=calendar_options, key="admin_cal")
-        st.caption("Green = available | Orange = pending | Blue = accepted")
 
 
 def _render_history_tab():
