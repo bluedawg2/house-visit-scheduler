@@ -247,34 +247,34 @@ def _render_history_tab():
 
 
 def _render_settings_tab():
-    """Render Gmail status and booking rules."""
+    """Render admin email and booking rules."""
 
-    # --- Gmail Status ---
-    st.markdown("#### Gmail Integration")
-    cfg = _get_gmail_config()
-    if cfg:
-        st.success(f"Connected to **{cfg['username']}**")
-        st.caption(
-            "Guests receive automatic emails when requests are "
-            "submitted, accepted, or rejected. Accepted visits "
-            "include a Google Calendar invite."
-        )
-    else:
-        st.warning("Gmail is not configured. Emails will not be sent.")
-        st.caption(
-            "To enable emails, add your Gmail credentials to "
-            "Streamlit secrets (`.streamlit/secrets.toml` locally, "
-            "or the Secrets dashboard on Streamlit Cloud):"
-        )
-        st.code(
-            '[gmail]\naddress = "you@gmail.com"\napp_password = "xxxx xxxx xxxx xxxx"',
-            language="toml",
-        )
-        st.caption(
-            "To create an App Password: "
-            "[myaccount.google.com](https://myaccount.google.com) "
-            "> Security > 2-Step Verification > App passwords."
-        )
+    # --- Admin Gmail ---
+    st.markdown("#### Your Gmail")
+    st.caption(
+        "Enter your Gmail address to receive notifications when guests "
+        "submit requests. Accepted visits will also appear as calendar "
+        "invites in your Google Calendar."
+    )
+
+    existing_email = database.get_config("admin_email") or ""
+    admin_email = st.text_input(
+        "Gmail address",
+        value=existing_email,
+        placeholder="you@gmail.com",
+        key="admin_gmail",
+    )
+
+    if st.button("Save", type="primary", key="save_email"):
+        if admin_email and "@" in admin_email:
+            database.set_config("admin_email", admin_email.strip())
+            st.success(f"Notifications will be sent to **{admin_email.strip()}**")
+            st.rerun()
+        else:
+            st.error("Please enter a valid email address.")
+
+    if existing_email:
+        st.success(f"Notifications go to **{existing_email}**")
 
     st.divider()
 
@@ -303,7 +303,7 @@ def _render_settings_tab():
 
 
 def _accept_request(req: dict, admin_notes: str):
-    """Accept a visit request and send acceptance email."""
+    """Accept a visit request and send acceptance email + admin calendar invite."""
     if database.has_overlap_conflict(req["check_in_date"], req["check_out_date"]):
         st.error("Cannot accept: these dates overlap with another accepted booking.")
         return
@@ -311,8 +311,10 @@ def _accept_request(req: dict, admin_notes: str):
     database.update_request_status(req["id"], "accepted", admin_notes=admin_notes)
 
     smtp_cfg = _get_gmail_config()
+    admin_email = database.get_config("admin_email")
     if smtp_cfg:
         try:
+            # Send confirmation to guest
             email_service.send_acceptance_email(
                 smtp_cfg,
                 req["visitor_name"],
@@ -320,9 +322,18 @@ def _accept_request(req: dict, admin_notes: str):
                 req["check_in_date"],
                 req["check_out_date"],
             )
+            # Send calendar invite to admin
+            if admin_email:
+                email_service.send_acceptance_email(
+                    smtp_cfg,
+                    req["visitor_name"],
+                    admin_email,
+                    req["check_in_date"],
+                    req["check_out_date"],
+                )
             st.session_state["email_feedback"] = (
                 "success",
-                f"Accepted! Confirmation email sent to {req['visitor_email']}.",
+                f"Accepted! Confirmation sent to {req['visitor_email']}.",
             )
         except Exception as e:
             st.session_state["email_feedback"] = (
@@ -332,7 +343,7 @@ def _accept_request(req: dict, admin_notes: str):
     else:
         st.session_state["email_feedback"] = (
             "success",
-            "Accepted. (Gmail not configured -- no email sent.)",
+            "Accepted.",
         )
     st.rerun()
 
@@ -364,7 +375,7 @@ def _reject_request(req: dict, admin_notes: str):
     else:
         st.session_state["email_feedback"] = (
             "success",
-            "Rejected. (No email sent.)",
+            "Rejected.",
         )
     st.rerun()
 

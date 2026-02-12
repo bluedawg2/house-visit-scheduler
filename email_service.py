@@ -151,6 +151,37 @@ def send_rejection_email(
     _send(smtp_config, msg)
 
 
+def send_admin_notification(
+    smtp_config: dict,
+    admin_email: str,
+    guest_name: str,
+    guest_email: str,
+    check_in: str,
+    check_out: str,
+    notes: str = "",
+) -> None:
+    """Notify the admin that a new visit request was submitted.
+
+    Raises on failure.
+    """
+    msg = MIMEMultipart("mixed")
+    msg["From"] = smtp_config["from_address"]
+    msg["To"] = admin_email
+    msg["Subject"] = f"New visit request from {guest_name} ({check_in} to {check_out})"
+
+    body = (
+        f"New visit request!\n\n"
+        f"  Guest:     {guest_name} ({guest_email})\n"
+        f"  Check-in:  {check_in}\n"
+        f"  Check-out: {check_out}\n"
+    )
+    if notes:
+        body += f"  Notes:     {notes}\n"
+    body += "\nLog in to the admin dashboard to accept or reject this request."
+    msg.attach(MIMEText(body, "plain"))
+    _send(smtp_config, msg)
+
+
 def test_smtp_connection(smtp_config: dict) -> None:
     """Test SMTP connectivity without sending an email. Raises on failure."""
     port = int(smtp_config["port"])

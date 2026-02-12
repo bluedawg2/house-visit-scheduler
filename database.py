@@ -49,6 +49,23 @@ def init_db():
 
 # --- Config ---
 
+def get_config(key: str) -> str | None:
+    conn = _get_conn()
+    row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def set_config(key: str, value: str) -> None:
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+        (key, value, value),
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_or_create_admin_key() -> str:
     conn = _get_conn()
     row = conn.execute("SELECT value FROM config WHERE key = 'admin_key'").fetchone()

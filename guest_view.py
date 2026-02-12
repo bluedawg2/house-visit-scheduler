@@ -294,17 +294,25 @@ def _handle_submission(name, email, check_in_str, check_out_str, notes):
     co = date.fromisoformat(check_out_str)
     nights = max((co - ci).days, 1)
 
-    # Send submission confirmation email
+    # Send submission confirmation email to guest + notify admin
     email_sent = False
     smtp_cfg = _get_gmail_config()
     if smtp_cfg:
         try:
+            # Confirm to guest
             email_service.send_submission_confirmation(
                 smtp_cfg, name.strip(), email.strip(), check_in_str, check_out_str
             )
             email_sent = True
+            # Notify admin
+            admin_email = database.get_config("admin_email")
+            if admin_email:
+                email_service.send_admin_notification(
+                    smtp_cfg, admin_email, name.strip(), email.strip(),
+                    check_in_str, check_out_str, notes.strip()
+                )
         except Exception:
-            email_sent = False  # Fail silently -- guest sees on-screen confirmation
+            pass  # Fail silently -- guest sees on-screen confirmation
 
     st.session_state["guest_submission"] = {
         "name": name.strip(),
