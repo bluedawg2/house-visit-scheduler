@@ -6,6 +6,25 @@ import email_service
 import styles
 
 
+def _get_gmail_config() -> dict | None:
+    """Read Gmail credentials from st.secrets. Returns smtp config dict or None."""
+    try:
+        gmail = st.secrets["gmail"]
+        address = gmail["address"]
+        app_password = gmail["app_password"]
+        if address and app_password:
+            return {
+                "server": "smtp.gmail.com",
+                "port": "587",
+                "username": address,
+                "password": app_password,
+                "from_address": address,
+            }
+    except (KeyError, FileNotFoundError):
+        pass
+    return None
+
+
 def _build_available_only_events():
     """Build calendar events showing ONLY available date ranges (green backgrounds).
 
@@ -277,7 +296,7 @@ def _handle_submission(name, email, check_in_str, check_out_str, notes):
 
     # Send submission confirmation email
     email_sent = False
-    smtp_cfg = database.get_smtp_config()
+    smtp_cfg = _get_gmail_config()
     if smtp_cfg:
         try:
             email_service.send_submission_confirmation(

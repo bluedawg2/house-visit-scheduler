@@ -6,6 +6,25 @@ import email_service
 import styles
 
 
+def _get_gmail_config() -> dict | None:
+    """Read Gmail credentials from st.secrets. Returns smtp config dict or None."""
+    try:
+        gmail = st.secrets["gmail"]
+        address = gmail["address"]
+        app_password = gmail["app_password"]
+        if address and app_password:
+            return {
+                "server": "smtp.gmail.com",
+                "port": "587",
+                "username": address,
+                "password": app_password,
+                "from_address": address,
+            }
+    except (KeyError, FileNotFoundError):
+        pass
+    return None
+
+
 def _build_calendar_events():
     """Build event list for the admin calendar with availability and requests."""
     events = []
@@ -228,62 +247,34 @@ def _render_history_tab():
 
 
 def _render_settings_tab():
-    """Render SMTP configuration and booking rules."""
+    """Render Gmail status and booking rules."""
 
-    # --- Gmail Integration ---
+    # --- Gmail Status ---
     st.markdown("#### Gmail Integration")
-    st.caption(
-        "Connect your Gmail account to send guests automatic emails "
-        "when requests are submitted, accepted, or rejected. "
-        "Accepted visits also get a Google Calendar invite."
-    )
-
-    existing = database.get_smtp_config() or {}
-
-    # Status indicator
-    if existing.get("username") and existing.get("password"):
-        st.success(f"Connected to **{existing['username']}**")
+    cfg = _get_gmail_config()
+    if cfg:
+        st.success(f"Connected to **{cfg['username']}**")
+        st.caption(
+            "Guests receive automatic emails when requests are "
+            "submitted, accepted, or rejected. Accepted visits "
+            "include a Google Calendar invite."
+        )
     else:
-        st.info("Not connected yet. Enter your Gmail details below.")
-
-    gmail_address = st.text_input(
-        "Gmail address",
-        value=existing.get("username", ""),
-        placeholder="you@gmail.com",
-        key="gmail_address",
-    )
-    app_password = st.text_input(
-        "App Password",
-        value=existing.get("password", ""),
-        type="password",
-        key="gmail_app_password",
-    )
-
-    st.caption(
-        "You need a Google App Password (not your regular password). "
-        "To create one: [myaccount.google.com](https://myaccount.google.com) "
-        "> Security > 2-Step Verification > App passwords."
-    )
-
-    col1, col2, _ = st.columns([1, 1, 2])
-    with col1:
-        if st.button("Save", type="primary", key="smtp_save"):
-            database.save_smtp_config(
-                "smtp.gmail.com", "587", gmail_address, app_password, gmail_address
-            )
-            st.success("Gmail connected!")
-            st.rerun()
-    with col2:
-        if st.button("Test Connection", key="smtp_test"):
-            cfg = database.get_smtp_config()
-            if not cfg:
-                st.error("Please save your Gmail details first.")
-            else:
-                try:
-                    email_service.test_smtp_connection(cfg)
-                    st.success("Connection successful!")
-                except Exception as e:
-                    st.error(f"Connection failed: {e}")
+        st.warning("Gmail is not configured. Emails will not be sent.")
+        st.caption(
+            "To enable emails, add your Gmail credentials to "
+            "Streamlit secrets (`.streamlit/secrets.toml` locally, "
+            "or the Secrets dashboard on Streamlit Cloud):"
+        )
+        st.code(
+            '[gmail]\naddress = "you@gmail.com"\napp_password = "xxxx xxxx xxxx xxxx"',
+            language="toml",
+        )
+        st.caption(
+            "To create an App Password: "
+            "[myaccount.google.com](https://myaccount.google.com) "
+            "> Security > 2-Step Verification > App passwords."
+        )
 
     st.divider()
 
@@ -319,7 +310,7 @@ def _accept_request(req: dict, admin_notes: str):
 
     database.update_request_status(req["id"], "accepted", admin_notes=admin_notes)
 
-    smtp_cfg = database.get_smtp_config()
+    smtp_cfg = _get_gmail_config()
     if smtp_cfg:
         try:
             email_service.send_acceptance_email(
@@ -350,7 +341,7 @@ def _reject_request(req: dict, admin_notes: str):
     """Reject a visit request and send rejection email."""
     database.update_request_status(req["id"], "rejected", admin_notes=admin_notes)
 
-    smtp_cfg = database.get_smtp_config()
+    smtp_cfg = _get_gmail_config()
     if smtp_cfg:
         try:
             email_service.send_rejection_email(
