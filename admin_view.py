@@ -82,6 +82,25 @@ def render():
 
     st.divider()
 
+    # Calendar overview -- always visible above tabs
+    st.markdown("#### Calendar Overview")
+    events = _build_calendar_events()
+    calendar_options = {
+        "editable": False,
+        "selectable": False,
+        "initialView": "dayGridMonth",
+        "headerToolbar": {
+            "left": "prev,next today",
+            "center": "title",
+            "right": "",
+        },
+        "height": 500,
+    }
+    st_calendar(events=events, options=calendar_options, key="admin_cal")
+    st.caption("Green = available | Orange = pending | Blue = accepted")
+
+    st.divider()
+
     # Tabbed interface
     pending = database.get_pending_requests()
     pending_count = len(pending)
@@ -153,28 +172,7 @@ def _render_requests_tab(pending):
 
 
 def _render_availability_tab():
-    """Render availability management with calendar overview on top."""
-
-    # Calendar overview -- full width at the top
-    st.markdown("#### Calendar Overview")
-    events = _build_calendar_events()
-    calendar_options = {
-        "editable": False,
-        "selectable": False,
-        "initialView": "dayGridMonth",
-        "headerToolbar": {
-            "left": "prev,next today",
-            "center": "title",
-            "right": "",
-        },
-        "height": 500,
-    }
-    st_calendar(events=events, options=calendar_options, key="admin_cal")
-    st.caption("Green = available | Orange = pending | Blue = accepted")
-
-    st.divider()
-
-    # Add availability + current list side by side below
+    """Render availability management controls."""
     col_add, col_list = st.columns(2)
 
     with col_add:
