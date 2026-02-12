@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from streamlit_calendar import calendar as st_calendar
 import database
 import email_service
+import styles
 
 
 def _build_calendar_events():
@@ -42,44 +43,133 @@ def _build_calendar_events():
 
 
 def render():
-    st.title("House Visit Scheduler")
-    st.subheader("Admin Dashboard")
+    styles.inject_admin_styles()
 
-    # --- Email feedback banner ---
+    st.title("House Visit Scheduler")
+    st.caption("Admin Dashboard")
+
+    # Email feedback banner
     if "email_feedback" in st.session_state:
         kind, msg = st.session_state.pop("email_feedback")
         if kind == "success":
             st.success(msg)
+        elif kind == "error":
+            st.error(msg)
         else:
             st.warning(msg)
 
-    # --- Guest Link ---
-    base_url = st.query_params.get("_base_url", "http://localhost:8501")
-    guest_url = f"{base_url}/?role=guest"
-    st.text_input(
-        "Share this link with guests:",
-        value=guest_url,
-        disabled=True,
-        key="guest_link",
-    )
-    st.info("Copy the link above and send it to your guests.")
+    # Guest link -- prominent, with copy button
+    _render_guest_link()
 
     st.divider()
 
-    # --- Calendar + Availability Management ---
-    col_cal, col_list = st.columns([3, 2])
+    # Tabbed interface
+    pending = database.get_pending_requests()
+    pending_count = len(pending)
+    tab_label = f"Requests ({pending_count})" if pending_count > 0 else "Requests"
+
+    tab_requests, tab_availability, tab_history, tab_settings = st.tabs([
+        tab_label,
+        "Availability",
+        "History",
+        "Settings",
+    ])
+
+    with tab_requests:
+        _render_requests_tab(pending)
+    with tab_availability:
+        _render_availability_tab()
+    with tab_history:
+        _render_history_tab()
+    with tab_settings:
+        _render_settings_tab()
+
+
+def _render_guest_link():
+    """Display the shareable guest booking link with a copy button."""
+    base_url = st.query_params.get("_base_url", "http://localhost:8501")
+    guest_url = f"{base_url}/?role=guest"
+
+    st.markdown("**Share this link with your guests:**")
+    st.code(guest_url, language=None)
+    st.caption("Guests can use this link to view availability and request a visit.")
+
+
+def _render_requests_tab(pending):
+    """Render pending requests as visible cards with accept/reject actions."""
+    if not pending:
+        st.info("No pending requests. You're all caught up!")
+        return
+
+    st.markdown(f"**{len(pending)} pending request{'s' if len(pending) != 1 else ''}**")
+
+    for req in pending:
+        with st.container(border=True):
+            col_info, col_actions = st.columns([3, 1])
+
+            with col_info:
+                st.markdown(f"**{req['visitor_name']}**")
+                st.markdown(f"{req['check_in_date']} to {req['check_out_date']}")
+                st.caption(f"{req['visitor_email']}")
+                if req["notes"]:
+                    st.markdown(f"*\"{req['notes']}\"*")
+                st.caption(f"Submitted {req['created_at']}")
+
+            with col_actions:
+                admin_notes = st.text_input(
+                    "Note",
+                    key=f"note_{req['id']}",
+                    label_visibility="collapsed",
+                    placeholder="Add a note...",
+                )
+                if st.button(
+                    "Accept", type="primary", key=f"accept_{req['id']}",
+                    use_container_width=True,
+                ):
+                    _accept_request(req, admin_notes)
+                if st.button(
+                    "Reject", key=f"reject_{req['id']}",
+                    use_container_width=True,
+                ):
+                    _reject_request(req, admin_notes)
+
+
+def _render_availability_tab():
+    """Render availability management with date pickers as primary input."""
+    col_add, col_cal = st.columns([2, 3])
+
+    with col_add:
+        st.markdown("#### Add Available Dates")
+        start = st.date_input("From", value=date.today(), key="avail_start")
+        end = st.date_input("To", value=date.today() + timedelta(days=7), key="avail_end")
+
+        if st.button("Add Availability", type="primary", use_container_width=True):
+            if end < start:
+                st.error("End date must be on or after start date.")
+            else:
+                database.add_availability(start.isoformat(), end.isoformat())
+                st.rerun()
+
+        st.divider()
+        st.markdown("#### Current Availability")
+        availability = database.get_all_availability()
+        if not availability:
+            st.caption("No availability set yet.")
+        for avail in availability:
+            col_a, col_b = st.columns([3, 1])
+            with col_a:
+                st.markdown(f"{avail['start_date']} to {avail['end_date']}")
+            with col_b:
+                if st.button("Remove", key=f"rm_{avail['id']}"):
+                    database.remove_availability(avail["id"])
+                    st.rerun()
 
     with col_cal:
-        st.markdown("### Calendar")
-        st.caption(
-            "Drag to select dates and add availability. "
-            "Green = available, Orange = pending, Blue = accepted."
-        )
-
+        st.markdown("#### Calendar Overview")
         events = _build_calendar_events()
         calendar_options = {
             "editable": False,
-            "selectable": True,
+            "selectable": False,
             "initialView": "dayGridMonth",
             "headerToolbar": {
                 "left": "prev,next today",
@@ -88,177 +178,176 @@ def render():
             },
             "height": 500,
         }
-        cal_result = st_calendar(
-            events=events, options=calendar_options, key="admin_cal"
+        st_calendar(events=events, options=calendar_options, key="admin_cal")
+        st.caption("Green = available | Orange = pending | Blue = accepted")
+
+
+def _render_history_tab():
+    """Render request history with filters and search."""
+    all_requests = database.get_all_requests()
+
+    if not all_requests:
+        st.info("No requests yet.")
+        return
+
+    # Filters
+    col_status, col_search = st.columns(2)
+    with col_status:
+        status_filter = st.selectbox(
+            "Filter by status",
+            ["All", "Pending", "Accepted", "Rejected"],
+            key="history_status_filter",
+        )
+    with col_search:
+        search = st.text_input("Search by name or email", key="history_search")
+
+    # Apply filters
+    filtered = all_requests
+    if status_filter != "All":
+        filtered = [r for r in filtered if r["status"] == status_filter.lower()]
+    if search:
+        q = search.lower()
+        filtered = [
+            r for r in filtered
+            if q in r["visitor_name"].lower() or q in r["visitor_email"].lower()
+        ]
+
+    st.caption(f"Showing {len(filtered)} of {len(all_requests)} requests")
+
+    for req in filtered:
+        with st.container(border=True):
+            col1, col2, col3 = st.columns([3, 2, 1])
+            with col1:
+                st.markdown(f"**{req['visitor_name']}** ({req['visitor_email']})")
+            with col2:
+                st.markdown(f"{req['check_in_date']} to {req['check_out_date']}")
+            with col3:
+                badge = styles.render_status_badge(req["status"])
+                st.markdown(badge, unsafe_allow_html=True)
+            if req["admin_notes"]:
+                st.caption(f"Note: {req['admin_notes']}")
+
+
+def _render_settings_tab():
+    """Render SMTP configuration and booking rules."""
+
+    # --- SMTP Section ---
+    st.markdown("#### Email Configuration")
+    st.caption(
+        "Configure SMTP to send automatic emails when requests are "
+        "submitted, accepted, or rejected."
+    )
+
+    existing = database.get_smtp_config() or {}
+
+    # Status indicator
+    if existing and all(existing.values()):
+        st.success("SMTP is configured and active.")
+    else:
+        st.warning("SMTP is not configured. Emails will not be sent.")
+
+    # Quick setup presets
+    preset = st.selectbox(
+        "Quick setup",
+        ["Custom", "Gmail", "Outlook / Hotmail", "Yahoo"],
+        key="smtp_preset",
+    )
+    preset_defaults = {
+        "Gmail": {"server": "smtp.gmail.com", "port": "587"},
+        "Outlook / Hotmail": {"server": "smtp.office365.com", "port": "587"},
+        "Yahoo": {"server": "smtp.mail.yahoo.com", "port": "587"},
+    }
+    defaults = preset_defaults.get(preset, {})
+
+    server = st.text_input(
+        "SMTP Server",
+        value=defaults.get("server", existing.get("server", "")),
+        key="smtp_server",
+    )
+    port = st.text_input(
+        "Port",
+        value=defaults.get("port", existing.get("port", "587")),
+        key="smtp_port",
+    )
+    username = st.text_input(
+        "Username / Email",
+        value=existing.get("username", ""),
+        key="smtp_username",
+    )
+    password = st.text_input(
+        "Password / App Password",
+        value=existing.get("password", ""),
+        type="password",
+        key="smtp_password",
+    )
+    from_addr = st.text_input(
+        "From Address",
+        value=existing.get("from_address", ""),
+        key="smtp_from",
+    )
+
+    if preset == "Gmail":
+        st.caption(
+            "For Gmail, use an App Password (not your regular password). "
+            "Go to myaccount.google.com > Security > 2-Step Verification > App passwords."
         )
 
-        # Handle date range selection
-        if cal_result and cal_result.get("callback") == "select":
-            sel = cal_result["select"]
-            start = sel["start"][:10]
-            # FullCalendar select end is exclusive, convert to inclusive
-            end_inclusive = (
-                date.fromisoformat(sel["end"][:10]) - timedelta(days=1)
-            ).isoformat()
-            st.session_state["pending_avail_start"] = start
-            st.session_state["pending_avail_end"] = end_inclusive
-
-        if "pending_avail_start" in st.session_state:
-            p_start = st.session_state["pending_avail_start"]
-            p_end = st.session_state["pending_avail_end"]
-            st.info(f"Add availability: **{p_start}** to **{p_end}**?")
-            btn_col1, btn_col2, _ = st.columns([1, 1, 3])
-            with btn_col1:
-                if st.button("Confirm", type="primary", key="confirm_avail"):
-                    database.add_availability(p_start, p_end)
-                    del st.session_state["pending_avail_start"]
-                    del st.session_state["pending_avail_end"]
-                    st.rerun()
-            with btn_col2:
-                if st.button("Cancel", key="cancel_avail"):
-                    del st.session_state["pending_avail_start"]
-                    del st.session_state["pending_avail_end"]
-                    st.rerun()
-
-    with col_list:
-        st.markdown("### Available Dates")
-        availability = database.get_all_availability()
-        if not availability:
-            st.caption("No availability set. Use the calendar to add dates.")
-        for avail in availability:
-            col_a, col_b = st.columns([3, 1])
-            with col_a:
-                st.markdown(f"**{avail['start_date']}** to **{avail['end_date']}**")
-            with col_b:
-                if st.button("Remove", key=f"rm_avail_{avail['id']}"):
-                    database.remove_availability(avail["id"])
-                    st.rerun()
-
-        # --- Manual Add (fallback if drag doesn't work) ---
-        with st.expander("Add availability manually"):
-            m_col1, m_col2 = st.columns(2)
-            with m_col1:
-                manual_start = st.date_input(
-                    "Start", value=date.today(), key="manual_start"
-                )
-            with m_col2:
-                manual_end = st.date_input(
-                    "End", value=date.today() + timedelta(days=7), key="manual_end"
-                )
-            if st.button("Add", key="manual_add"):
-                if manual_end < manual_start:
-                    st.error("End date must be on or after start date.")
-                else:
-                    database.add_availability(
-                        manual_start.isoformat(), manual_end.isoformat()
-                    )
-                    st.rerun()
+    col1, col2, _ = st.columns([1, 1, 2])
+    with col1:
+        if st.button("Save Settings", type="primary", key="smtp_save"):
+            database.save_smtp_config(server, port, username, password, from_addr)
+            st.success("SMTP settings saved.")
+            st.rerun()
+    with col2:
+        if st.button("Test Connection", key="smtp_test"):
+            cfg = database.get_smtp_config()
+            if not cfg:
+                st.error("Please save SMTP settings first.")
+            else:
+                try:
+                    email_service.test_smtp_connection(cfg)
+                    st.success("Connection successful!")
+                except Exception as e:
+                    st.error(f"Connection failed: {e}")
 
     st.divider()
 
-    # --- Pending Requests ---
-    st.markdown("### Pending Requests")
-    pending = database.get_pending_requests()
-    if not pending:
-        st.caption("No pending requests.")
-    for req in pending:
-        with st.expander(
-            f"{req['visitor_name']} -- {req['check_in_date']} to {req['check_out_date']}"
-        ):
-            st.markdown(f"**Email:** {req['visitor_email']}")
-            st.markdown(
-                f"**Dates:** {req['check_in_date']} to {req['check_out_date']}"
-            )
-            if req["notes"]:
-                st.markdown(f"**Notes:** {req['notes']}")
-            st.caption(f"Submitted: {req['created_at']}")
+    # --- Booking Rules Section ---
+    st.markdown("#### Booking Rules")
+    min_stay, max_stay = database.get_stay_limits()
 
-            admin_notes = st.text_input(
-                "Admin notes (optional)",
-                key=f"admin_note_{req['id']}",
-            )
-
-            act_col1, act_col2, _ = st.columns([1, 1, 3])
-            with act_col1:
-                if st.button("Accept", type="primary", key=f"accept_{req['id']}"):
-                    _accept_request(req, admin_notes)
-            with act_col2:
-                if st.button("Reject", key=f"reject_{req['id']}"):
-                    database.update_request_status(
-                        req["id"], "rejected", admin_notes=admin_notes
-                    )
-                    st.rerun()
-
-    st.divider()
-
-    # --- Request History ---
-    with st.expander("View All Requests"):
-        all_requests = database.get_all_requests()
-        if not all_requests:
-            st.caption("No requests yet.")
-        else:
-            for req in all_requests:
-                status_icon = {
-                    "pending": "🟠",
-                    "accepted": "🟢",
-                    "rejected": "🔴",
-                }.get(req["status"], "⚪")
-                st.markdown(
-                    f"{status_icon} **{req['visitor_name']}** — "
-                    f"{req['check_in_date']} to {req['check_out_date']} — "
-                    f"*{req['status']}*"
-                )
-                if req["admin_notes"]:
-                    st.caption(f"Admin note: {req['admin_notes']}")
-
-
-
-    # --- Email Settings ---
-    _render_smtp_settings()
-
-
-def _render_smtp_settings():
-    """Render the SMTP configuration expander."""
-    with st.expander("Email Settings (SMTP)"):
-        st.caption("Configure SMTP to auto-send confirmation emails with calendar invites when you accept a request.")
-        existing = database.get_smtp_config() or {}
-        server = st.text_input("SMTP Server", value=existing.get("server", ""), key="smtp_server")
-        port = st.text_input("Port", value=existing.get("port", "587"), key="smtp_port")
-        username = st.text_input("Username", value=existing.get("username", ""), key="smtp_username")
-        password = st.text_input("Password", value=existing.get("password", ""), type="password", key="smtp_password")
-        from_addr = st.text_input("From Address", value=existing.get("from_address", ""), key="smtp_from")
-
-        btn_col1, btn_col2, _ = st.columns([1, 1, 3])
-        with btn_col1:
-            if st.button("Save", key="smtp_save"):
-                database.save_smtp_config(server, port, username, password, from_addr)
-                st.success("SMTP settings saved.")
-        with btn_col2:
-            if st.button("Test Connection", key="smtp_test"):
-                cfg = database.get_smtp_config()
-                if not cfg:
-                    st.error("Please save SMTP settings first.")
-                else:
-                    try:
-                        email_service.test_smtp_connection(cfg)
-                        st.success("Connection successful!")
-                    except Exception as e:
-                        st.error(f"Connection failed: {e}")
+    col_min, col_max = st.columns(2)
+    with col_min:
+        new_min = st.number_input(
+            "Minimum nights",
+            min_value=0,
+            value=min_stay or 1,
+            key="min_stay",
+        )
+    with col_max:
+        new_max = st.number_input(
+            "Maximum nights (0 = no limit)",
+            min_value=0,
+            value=max_stay or 0,
+            key="max_stay",
+        )
+    if st.button("Save Rules", key="save_rules"):
+        database.save_stay_limits(new_min, new_max)
+        st.success("Booking rules saved.")
 
 
 def _accept_request(req: dict, admin_notes: str):
-    """Accept a visit request and attempt to send confirmation email."""
+    """Accept a visit request and send acceptance email."""
     if database.has_overlap_conflict(req["check_in_date"], req["check_out_date"]):
         st.error("Cannot accept: these dates overlap with another accepted booking.")
         return
 
     database.update_request_status(req["id"], "accepted", admin_notes=admin_notes)
 
-    # Attempt to send confirmation email
     smtp_cfg = database.get_smtp_config()
     if smtp_cfg:
         try:
-            email_service.send_confirmation_email(
+            email_service.send_acceptance_email(
                 smtp_cfg,
                 req["visitor_name"],
                 req["visitor_email"],
@@ -267,17 +356,48 @@ def _accept_request(req: dict, admin_notes: str):
             )
             st.session_state["email_feedback"] = (
                 "success",
-                f"Request accepted and confirmation email sent to {req['visitor_email']}.",
+                f"Accepted! Confirmation email sent to {req['visitor_email']}.",
             )
         except Exception as e:
             st.session_state["email_feedback"] = (
                 "warning",
-                f"Request accepted but email failed: {e}",
+                f"Accepted, but email failed: {e}",
             )
     else:
         st.session_state["email_feedback"] = (
             "success",
-            "Request accepted. (No SMTP configured — no email sent.)",
+            "Accepted. (No SMTP configured -- no email sent.)",
         )
+    st.rerun()
 
+
+def _reject_request(req: dict, admin_notes: str):
+    """Reject a visit request and send rejection email."""
+    database.update_request_status(req["id"], "rejected", admin_notes=admin_notes)
+
+    smtp_cfg = database.get_smtp_config()
+    if smtp_cfg:
+        try:
+            email_service.send_rejection_email(
+                smtp_cfg,
+                req["visitor_name"],
+                req["visitor_email"],
+                req["check_in_date"],
+                req["check_out_date"],
+                admin_notes,
+            )
+            st.session_state["email_feedback"] = (
+                "success",
+                f"Rejected. Notification sent to {req['visitor_email']}.",
+            )
+        except Exception as e:
+            st.session_state["email_feedback"] = (
+                "warning",
+                f"Rejected, but email failed: {e}",
+            )
+    else:
+        st.session_state["email_feedback"] = (
+            "success",
+            "Rejected. (No email sent.)",
+        )
     st.rerun()

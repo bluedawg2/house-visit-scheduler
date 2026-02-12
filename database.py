@@ -220,3 +220,29 @@ def save_smtp_config(server: str, port: str, username: str, password: str, from_
         )
     conn.commit()
     conn.close()
+
+
+# --- Stay Limits ---
+
+def get_stay_limits() -> tuple:
+    """Return (min_nights, max_nights) from config. None means no limit."""
+    conn = _get_conn()
+    min_row = conn.execute("SELECT value FROM config WHERE key = 'min_stay_nights'").fetchone()
+    max_row = conn.execute("SELECT value FROM config WHERE key = 'max_stay_nights'").fetchone()
+    conn.close()
+    min_val = int(min_row["value"]) if min_row and min_row["value"] else None
+    max_val = int(max_row["value"]) if max_row and max_row["value"] else None
+    # Treat 0 as "no limit"
+    return (min_val if min_val and min_val > 0 else None,
+            max_val if max_val and max_val > 0 else None)
+
+
+def save_stay_limits(min_nights: int, max_nights: int) -> None:
+    conn = _get_conn()
+    for key, val in [("min_stay_nights", str(min_nights)), ("max_stay_nights", str(max_nights))]:
+        conn.execute(
+            "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+            (key, val, val),
+        )
+    conn.commit()
+    conn.close()

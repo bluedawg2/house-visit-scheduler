@@ -30,24 +30,10 @@ def main():
         else:
             st.error("Invalid admin key. Access denied.")
             st.stop()
-    elif role == "guest":
+    else:
+        # Default: show guest view directly (like Calendly's shareable link)
         import guest_view
         guest_view.render()
-    else:
-        # Landing page — no role specified
-        st.title("House Visit Scheduler")
-        st.markdown("Welcome! Choose your role to get started.")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Admin")
-            st.caption("Manage availability and review visit requests.")
-            admin_url = f"?role=admin&key={admin_key}"
-            st.markdown(f"[Open Admin Dashboard]({admin_url})")
-        with col2:
-            st.subheader("Guest")
-            st.caption("View available dates and request a visit.")
-            st.markdown("[Open Guest Page](?role=guest)")
 
 
 if __name__ == "__main__":

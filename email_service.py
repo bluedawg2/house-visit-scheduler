@@ -8,6 +8,21 @@ from datetime import date, timedelta
 from uuid import uuid4
 
 
+def _send(smtp_config: dict, msg: MIMEMultipart) -> None:
+    """Send a MIMEMultipart message via SMTP. Raises on failure."""
+    port = int(smtp_config["port"])
+    if port == 465:
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL(smtp_config["server"], port, context=context, timeout=15) as server:
+            server.login(smtp_config["username"], smtp_config["password"])
+            server.send_message(msg)
+    else:
+        with smtplib.SMTP(smtp_config["server"], port, timeout=15) as server:
+            server.starttls(context=ssl.create_default_context())
+            server.login(smtp_config["username"], smtp_config["password"])
+            server.send_message(msg)
+
+
 def generate_ics(guest_name: str, check_in: str, check_out: str) -> str:
     """Generate an .ics calendar file for the visit as an all-day event."""
     ci = date.fromisoformat(check_in)
@@ -35,14 +50,14 @@ def generate_ics(guest_name: str, check_in: str, check_out: str) -> str:
     )
 
 
-def send_confirmation_email(
+def send_acceptance_email(
     smtp_config: dict,
     guest_name: str,
     guest_email: str,
     check_in: str,
     check_out: str,
 ) -> None:
-    """Send a confirmation email with an .ics calendar attachment.
+    """Send an acceptance email with an .ics calendar attachment.
 
     smtp_config keys: server, port, username, password, from_address
     Raises on failure so the caller can display the error.
@@ -51,7 +66,6 @@ def send_confirmation_email(
     co = date.fromisoformat(check_out)
     nights = max((co - ci).days, 1)
 
-    # Build message
     msg = MIMEMultipart("mixed")
     msg["From"] = smtp_config["from_address"]
     msg["To"] = guest_email
@@ -76,18 +90,65 @@ def send_confirmation_email(
     ics_part.add_header("Content-Disposition", "attachment", filename="visit.ics")
     msg.attach(ics_part)
 
-    # Send
-    port = int(smtp_config["port"])
-    if port == 465:
-        context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(smtp_config["server"], port, context=context, timeout=15) as server:
-            server.login(smtp_config["username"], smtp_config["password"])
-            server.send_message(msg)
-    else:
-        with smtplib.SMTP(smtp_config["server"], port, timeout=15) as server:
-            server.starttls(context=ssl.create_default_context())
-            server.login(smtp_config["username"], smtp_config["password"])
-            server.send_message(msg)
+    _send(smtp_config, msg)
+
+
+def send_submission_confirmation(
+    smtp_config: dict,
+    guest_name: str,
+    guest_email: str,
+    check_in: str,
+    check_out: str,
+) -> None:
+    """Send a confirmation email when a guest submits a visit request.
+
+    No ICS attachment — the visit is not yet approved.
+    Raises on failure.
+    """
+    msg = MIMEMultipart("mixed")
+    msg["From"] = smtp_config["from_address"]
+    msg["To"] = guest_email
+    msg["Subject"] = f"We received your visit request ({check_in} to {check_out})"
+
+    body = (
+        f"Hi {guest_name},\n\n"
+        f"Your visit request has been received!\n\n"
+        f"  Requested dates: {check_in} to {check_out}\n\n"
+        f"The host will review your request and you will receive another email "
+        f"once a decision has been made.\n\n"
+        f"Thank you!"
+    )
+    msg.attach(MIMEText(body, "plain"))
+    _send(smtp_config, msg)
+
+
+def send_rejection_email(
+    smtp_config: dict,
+    guest_name: str,
+    guest_email: str,
+    check_in: str,
+    check_out: str,
+    admin_notes: str = "",
+) -> None:
+    """Send a notification email when a visit request is rejected.
+
+    Raises on failure.
+    """
+    msg = MIMEMultipart("mixed")
+    msg["From"] = smtp_config["from_address"]
+    msg["To"] = guest_email
+    msg["Subject"] = f"Update on your visit request ({check_in} to {check_out})"
+
+    body = (
+        f"Hi {guest_name},\n\n"
+        f"Unfortunately, your visit request for {check_in} to {check_out} "
+        f"could not be accommodated at this time.\n\n"
+    )
+    if admin_notes:
+        body += f"Note from host: {admin_notes}\n\n"
+    body += "Feel free to request different dates.\n\nBest regards"
+    msg.attach(MIMEText(body, "plain"))
+    _send(smtp_config, msg)
 
 
 def test_smtp_connection(smtp_config: dict) -> None:
