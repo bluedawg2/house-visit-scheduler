@@ -37,11 +37,13 @@ def _build_available_only_events():
             date.fromisoformat(avail["end_date"]) + timedelta(days=1)
         ).isoformat()
         events.append({
-            "title": "",
+            "title": " ",
             "start": avail["start_date"],
             "end": end_exclusive,
             "display": "background",
             "backgroundColor": "#4CAF50",
+            "textColor": "transparent",
+            "classNames": ["hide-event-text"],
         })
     return events
 
@@ -304,9 +306,8 @@ def _handle_submission(name, email, check_in_str, check_out_str, notes):
                 smtp_cfg, name.strip(), email.strip(), check_in_str, check_out_str
             )
             email_sent = True
-            # Notify admin
-            admin_email = database.get_config("admin_email")
-            if admin_email:
+            # Notify all admins
+            for admin_email in database.get_admin_emails():
                 email_service.send_admin_notification(
                     smtp_cfg, admin_email, name.strip(), email.strip(),
                     check_in_str, check_out_str, notes.strip()

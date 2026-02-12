@@ -80,6 +80,17 @@ def get_or_create_admin_key() -> str:
     return new_key
 
 
+def get_admin_emails() -> list[str]:
+    """Return list of admin email addresses from config. Empty list if none set."""
+    raw = get_config("admin_email") or ""
+    return [e.strip() for e in raw.split(",") if e.strip() and "@" in e.strip()]
+
+
+def set_admin_emails(emails: list[str]) -> None:
+    """Store admin email addresses as comma-separated string."""
+    set_config("admin_email", ", ".join(e.strip() for e in emails if e.strip()))
+
+
 # --- Availability ---
 
 def add_availability(start_date: str, end_date: str) -> int:

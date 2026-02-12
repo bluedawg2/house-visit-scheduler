@@ -36,11 +36,13 @@ def _build_calendar_events():
             date.fromisoformat(avail["end_date"]) + timedelta(days=1)
         ).isoformat()
         events.append({
-            "title": "Available",
+            "title": " ",
             "start": avail["start_date"],
             "end": end_exclusive,
             "display": "background",
             "backgroundColor": "#4CAF50",
+            "textColor": "transparent",
+            "classNames": ["hide-event-text"],
         })
 
     for req in all_requests:
@@ -252,31 +254,42 @@ def _render_settings_tab():
     """Render admin email and booking rules."""
 
     # --- Admin Gmail ---
-    st.markdown("#### Your Gmail")
+    st.markdown("#### Admin Emails")
     st.caption(
-        "Enter your Gmail address to receive notifications when guests "
-        "submit requests. Accepted visits will also appear as calendar "
-        "invites in your Google Calendar."
+        "Enter one or more Gmail addresses to receive notifications when "
+        "guests submit requests. Accepted visits will also appear as "
+        "calendar invites. Enter one email per line."
     )
 
-    existing_email = database.get_config("admin_email") or ""
-    admin_email = st.text_input(
-        "Gmail address",
-        value=existing_email,
-        placeholder="you@gmail.com",
-        key="admin_gmail",
+    existing_emails = database.get_admin_emails()
+    existing_text = "\n".join(existing_emails)
+    admin_emails_text = st.text_area(
+        "Gmail addresses (one per line)",
+        value=existing_text,
+        placeholder="admin1@gmail.com\nadmin2@gmail.com",
+        key="admin_gmails",
+        height=100,
     )
 
     if st.button("Save", type="primary", key="save_email"):
-        if admin_email and "@" in admin_email:
-            database.set_config("admin_email", admin_email.strip())
-            st.success(f"Notifications will be sent to **{admin_email.strip()}**")
-            st.rerun()
-        else:
-            st.error("Please enter a valid email address.")
+        # Parse emails from text area (support both newlines and commas)
+        raw = admin_emails_text.replace(",", "\n")
+        parsed = [e.strip() for e in raw.split("\n") if e.strip()]
+        valid = [e for e in parsed if "@" in e and "." in e]
+        invalid = [e for e in parsed if e not in valid]
 
-    if existing_email:
-        st.success(f"Notifications go to **{existing_email}**")
+        if invalid:
+            st.error(f"Invalid email(s): {', '.join(invalid)}")
+        elif not valid:
+            st.error("Please enter at least one valid email address.")
+        else:
+            database.set_admin_emails(valid)
+            st.success(f"Notifications will be sent to **{len(valid)}** address{'es' if len(valid) != 1 else ''}.")
+            st.rerun()
+
+    if existing_emails:
+        label = ", ".join(existing_emails)
+        st.success(f"Notifications go to **{label}**")
 
     st.divider()
 
@@ -313,7 +326,7 @@ def _accept_request(req: dict, admin_notes: str):
     database.update_request_status(req["id"], "accepted", admin_notes=admin_notes)
 
     smtp_cfg = _get_gmail_config()
-    admin_email = database.get_config("admin_email")
+    admin_emails = database.get_admin_emails()
     if smtp_cfg:
         try:
             # Send confirmation to guest
@@ -324,8 +337,8 @@ def _accept_request(req: dict, admin_notes: str):
                 req["check_in_date"],
                 req["check_out_date"],
             )
-            # Send calendar invite to admin
-            if admin_email:
+            # Send calendar invite to each admin
+            for admin_email in admin_emails:
                 email_service.send_acceptance_email(
                     smtp_cfg,
                     req["visitor_name"],

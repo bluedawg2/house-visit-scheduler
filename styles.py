@@ -42,9 +42,22 @@ def inject_guest_styles():
     .fc-bg-event {{
         font-size: 0 !important;
         color: transparent !important;
+        overflow: hidden !important;
     }}
-    .fc-bg-event .fc-event-title {{
+    .fc-bg-event .fc-event-title,
+    .fc-bg-event .fc-event-main,
+    .fc-bg-event .fc-event-title-container {{
         display: none !important;
+        font-size: 0 !important;
+        color: transparent !important;
+        visibility: hidden !important;
+    }}
+    .hide-event-text,
+    .hide-event-text * {{
+        font-size: 0 !important;
+        color: transparent !important;
+        visibility: hidden !important;
+        line-height: 0 !important;
     }}
 
     /* Narrow centered layout like Calendly */
@@ -158,6 +171,28 @@ def inject_admin_styles():
     """Inject CSS for the admin dashboard."""
     st.markdown("""
     <style>
+    /* Hide text inside calendar background events */
+    .fc-bg-event {
+        font-size: 0 !important;
+        color: transparent !important;
+        overflow: hidden !important;
+    }
+    .fc-bg-event .fc-event-title,
+    .fc-bg-event .fc-event-main,
+    .fc-bg-event .fc-event-title-container {
+        display: none !important;
+        font-size: 0 !important;
+        color: transparent !important;
+        visibility: hidden !important;
+    }
+    .hide-event-text,
+    .hide-event-text * {
+        font-size: 0 !important;
+        color: transparent !important;
+        visibility: hidden !important;
+        line-height: 0 !important;
+    }
+
     /* Status badges */
     .badge {
         padding: 0.2rem 0.7rem;
