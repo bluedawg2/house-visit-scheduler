@@ -37,7 +37,7 @@ def _build_available_only_events():
             date.fromisoformat(avail["end_date"]) + timedelta(days=1)
         ).isoformat()
         events.append({
-            "title": "Available",
+            "title": "",
             "start": avail["start_date"],
             "end": end_exclusive,
             "display": "background",
@@ -99,17 +99,17 @@ def _render_step_dates():
             key="ci_input",
         )
     with col2:
-        min_co = check_in + timedelta(days=1) if check_in else date.today() + timedelta(days=1)
-        default_co = st.session_state.get("guest_check_out") or min_co
-        # Ensure default_co is not before min_co
-        if isinstance(default_co, str):
-            default_co = date.fromisoformat(default_co)
-        if default_co < min_co:
-            default_co = min_co
+        stored_co = st.session_state.get("guest_check_out")
+        if stored_co:
+            if isinstance(stored_co, str):
+                stored_co = date.fromisoformat(stored_co)
+            co_value = stored_co
+        else:
+            co_value = None
         check_out = st.date_input(
             "Check-out",
-            value=default_co,
-            min_value=min_co,
+            value=co_value,
+            min_value=check_in + timedelta(days=1) if check_in else date.today() + timedelta(days=1),
             key="co_input",
         )
 
