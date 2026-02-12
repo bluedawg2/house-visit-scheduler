@@ -87,12 +87,11 @@ def render():
 
 def _render_guest_link():
     """Display the shareable guest booking link with a copy button."""
-    base_url = st.query_params.get("_base_url", "http://localhost:8501")
-    guest_url = f"{base_url}/?role=guest"
-
     st.markdown("**Share this link with your guests:**")
-    st.code(guest_url, language=None)
-    st.caption("Guests can use this link to view availability and request a visit.")
+    st.caption(
+        "Copy your app's root URL (e.g. `https://house-scheduler.streamlit.app`) "
+        "and send it to guests. They'll see the booking page directly."
+    )
 
 
 def _render_requests_tab(pending):
@@ -401,3 +400,7 @@ def _reject_request(req: dict, admin_notes: str):
             "Rejected. (No email sent.)",
         )
     st.rerun()
+
+
+# Entry point when used as a st.Page file
+render()

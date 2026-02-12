@@ -8,33 +8,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+database.init_db()
 
-def main():
-    database.init_db()
-    admin_key = database.get_or_create_admin_key()
+# Define pages
+guest_page = st.Page("guest_view.py", title="Book a Visit", url_path="", default=True)
+admin_page = st.Page("admin_view.py", title="Admin", url_path="admin")
 
-    # Print admin URL to server console on startup
-    print(f"\n{'='*60}")
-    print(f"  Admin URL: http://localhost:8501/?role=admin&key={admin_key}")
-    print(f"  Guest URL: http://localhost:8501/?role=guest")
-    print(f"{'='*60}\n")
-
-    params = st.query_params
-    role = params.get("role", "")
-    key = params.get("key", "")
-
-    if role == "admin":
-        if key == admin_key:
-            import admin_view
-            admin_view.render()
-        else:
-            st.error("Invalid admin key. Access denied.")
-            st.stop()
-    else:
-        # Default: show guest view directly (like Calendly's shareable link)
-        import guest_view
-        guest_view.render()
-
-
-if __name__ == "__main__":
-    main()
+# Hidden navigation -- guests see no sidebar, admin bookmarks /admin
+pg = st.navigation([guest_page, admin_page], position="hidden")
+pg.run()

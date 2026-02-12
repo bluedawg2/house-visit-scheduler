@@ -300,3 +300,7 @@ def _handle_submission(name, email, check_in_str, check_out_str, notes):
     st.session_state["guest_check_in"] = None
     st.session_state["guest_check_out"] = None
     st.rerun()
+
+
+# Entry point when used as a st.Page file
+render()
