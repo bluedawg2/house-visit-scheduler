@@ -38,6 +38,15 @@ def inject_guest_styles():
     <style>
     {bg}
 
+    /* Hide text inside calendar background events */
+    .fc-bg-event {{
+        font-size: 0 !important;
+        color: transparent !important;
+    }}
+    .fc-bg-event .fc-event-title {{
+        display: none !important;
+    }}
+
     /* Narrow centered layout like Calendly */
     .stMainBlockContainer {{
         max-width: 720px;
