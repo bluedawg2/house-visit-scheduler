@@ -230,78 +230,54 @@ def _render_history_tab():
 def _render_settings_tab():
     """Render SMTP configuration and booking rules."""
 
-    # --- SMTP Section ---
-    st.markdown("#### Email Configuration")
+    # --- Gmail Integration ---
+    st.markdown("#### Gmail Integration")
     st.caption(
-        "Configure SMTP to send automatic emails when requests are "
-        "submitted, accepted, or rejected."
+        "Connect your Gmail account to send guests automatic emails "
+        "when requests are submitted, accepted, or rejected. "
+        "Accepted visits also get a Google Calendar invite."
     )
 
     existing = database.get_smtp_config() or {}
 
     # Status indicator
-    if existing and all(existing.values()):
-        st.success("SMTP is configured and active.")
+    if existing.get("username") and existing.get("password"):
+        st.success(f"Connected to **{existing['username']}**")
     else:
-        st.warning("SMTP is not configured. Emails will not be sent.")
+        st.info("Not connected yet. Enter your Gmail details below.")
 
-    # Quick setup presets
-    preset = st.selectbox(
-        "Quick setup",
-        ["Custom", "Gmail", "Outlook / Hotmail", "Yahoo"],
-        key="smtp_preset",
-    )
-    preset_defaults = {
-        "Gmail": {"server": "smtp.gmail.com", "port": "587"},
-        "Outlook / Hotmail": {"server": "smtp.office365.com", "port": "587"},
-        "Yahoo": {"server": "smtp.mail.yahoo.com", "port": "587"},
-    }
-    defaults = preset_defaults.get(preset, {})
-
-    server = st.text_input(
-        "SMTP Server",
-        value=defaults.get("server", existing.get("server", "")),
-        key="smtp_server",
-    )
-    port = st.text_input(
-        "Port",
-        value=defaults.get("port", existing.get("port", "587")),
-        key="smtp_port",
-    )
-    username = st.text_input(
-        "Username / Email",
+    gmail_address = st.text_input(
+        "Gmail address",
         value=existing.get("username", ""),
-        key="smtp_username",
+        placeholder="you@gmail.com",
+        key="gmail_address",
     )
-    password = st.text_input(
-        "Password / App Password",
+    app_password = st.text_input(
+        "App Password",
         value=existing.get("password", ""),
         type="password",
-        key="smtp_password",
-    )
-    from_addr = st.text_input(
-        "From Address",
-        value=existing.get("from_address", ""),
-        key="smtp_from",
+        key="gmail_app_password",
     )
 
-    if preset == "Gmail":
-        st.caption(
-            "For Gmail, use an App Password (not your regular password). "
-            "Go to myaccount.google.com > Security > 2-Step Verification > App passwords."
-        )
+    st.caption(
+        "You need a Google App Password (not your regular password). "
+        "To create one: [myaccount.google.com](https://myaccount.google.com) "
+        "> Security > 2-Step Verification > App passwords."
+    )
 
     col1, col2, _ = st.columns([1, 1, 2])
     with col1:
-        if st.button("Save Settings", type="primary", key="smtp_save"):
-            database.save_smtp_config(server, port, username, password, from_addr)
-            st.success("SMTP settings saved.")
+        if st.button("Save", type="primary", key="smtp_save"):
+            database.save_smtp_config(
+                "smtp.gmail.com", "587", gmail_address, app_password, gmail_address
+            )
+            st.success("Gmail connected!")
             st.rerun()
     with col2:
         if st.button("Test Connection", key="smtp_test"):
             cfg = database.get_smtp_config()
             if not cfg:
-                st.error("Please save SMTP settings first.")
+                st.error("Please save your Gmail details first.")
             else:
                 try:
                     email_service.test_smtp_connection(cfg)
@@ -365,7 +341,7 @@ def _accept_request(req: dict, admin_notes: str):
     else:
         st.session_state["email_feedback"] = (
             "success",
-            "Accepted. (No SMTP configured -- no email sent.)",
+            "Accepted. (Gmail not configured -- no email sent.)",
         )
     st.rerun()
 
