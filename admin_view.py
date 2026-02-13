@@ -28,7 +28,7 @@ def _get_gmail_config() -> dict | None:
 def _build_calendar_events():
     """Build event list for the admin calendar with availability and requests."""
     events = []
-    availability = database.get_all_availability()
+    availability = database.get_availability_minus_accepted()
     all_requests = database.get_all_requests()
 
     for avail in availability:

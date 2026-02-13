@@ -1,7 +1,7 @@
 import sqlite3
 import secrets
 import os
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calendar.db")
 
@@ -112,6 +112,55 @@ def get_all_availability() -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_availability_minus_accepted() -> list[dict]:
+    """Return availability ranges with accepted booking dates carved out.
+
+    If availability is 2/10-2/28 and there's an accepted booking for 2/15-2/17,
+    this returns two ranges: 2/10-2/14 and 2/18-2/28.
+    """
+    availability = get_all_availability()
+    accepted = get_accepted_requests()
+
+    if not accepted:
+        return availability
+
+    accepted_ranges = [
+        (date.fromisoformat(req["check_in_date"]),
+         date.fromisoformat(req["check_out_date"]))
+        for req in accepted
+    ]
+
+    result = []
+    for avail in availability:
+        avail_start = date.fromisoformat(avail["start_date"])
+        avail_end = date.fromisoformat(avail["end_date"])
+
+        # Subtract each accepted range from this availability segment
+        remaining = [(avail_start, avail_end)]
+        for acc_start, acc_end in accepted_ranges:
+            new_remaining = []
+            for r_start, r_end in remaining:
+                if acc_end < r_start or acc_start > r_end:
+                    # No overlap — keep as-is
+                    new_remaining.append((r_start, r_end))
+                else:
+                    # Part before the accepted range
+                    if r_start < acc_start:
+                        new_remaining.append((r_start, acc_start - timedelta(days=1)))
+                    # Part after the accepted range
+                    if r_end > acc_end:
+                        new_remaining.append((acc_end + timedelta(days=1), r_end))
+            remaining = new_remaining
+
+        for r_start, r_end in remaining:
+            result.append({
+                "start_date": r_start.isoformat(),
+                "end_date": r_end.isoformat(),
+            })
+
+    return result
 
 
 def remove_availability(avail_id: int) -> None:

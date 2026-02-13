@@ -29,9 +29,10 @@ def _build_available_only_events():
     """Build calendar events showing ONLY available date ranges (green backgrounds).
 
     Calendly principle: show only what's bookable. No booked/pending noise.
+    Accepted bookings are carved out so their dates no longer appear green.
     """
     events = []
-    availability = database.get_all_availability()
+    availability = database.get_availability_minus_accepted()
     for avail in availability:
         end_exclusive = (
             date.fromisoformat(avail["end_date"]) + timedelta(days=1)
