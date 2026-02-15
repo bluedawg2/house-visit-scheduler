@@ -1,0 +1,12 @@
+name: Ping App
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: zzzze/action-uptime-monitor@master
+        with:
+          url: https://house-scheduler.streamlit.app/
